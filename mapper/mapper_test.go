@@ -69,6 +69,72 @@ func TestMapConvert(t *testing.T) {
 	}
 }
 
+func TestMapKeyType(t *testing.T) {
+	a := assert.New(t)
+	m := &Mapper{}
+	s1 := map[string]interface{}{"key": 10}
+	s2 := map[interface{}]interface{}{"key": "hello"}
+	if a.NoError(m.Map(&s1, s2)) {
+		a.Equal("hello", s1["key"])
+	}
+	i1 := map[int]interface{}{1: 100}
+	if a.NoError(m.Map(&s2, i1)) {
+		a.Equal(100, s2[1])
+	}
+	a.Error(m.Map(&s1, i1))
+}
+
+func TestMapPtr(t *testing.T) {
+	a := assert.New(t)
+	m := &Mapper{}
+	var p *struct1
+	s := struct1{Str: "str"}
+	if a.NoError(m.Map(&p, &s)) {
+		a.NotNil(p)
+		a.Equal(&s, p)
+	}
+}
+
+func TestMapInterface(t *testing.T) {
+	a := assert.New(t)
+	m := &Mapper{}
+	s := struct1{Str: "str"}
+	var i interface{}
+	if a.NoError(m.Map(&i, &s)) {
+		s1, ok := i.(*struct1)
+		if a.True(ok) {
+			a.Equal("str", s1.Str)
+		}
+	}
+	var p *struct1
+	if a.NoError(m.Map(&p, i)) {
+		a.Equal(&s, p)
+	}
+	if a.NoError(m.Map(&i, int(10))) {
+		intVal, ok := i.(int)
+		if a.True(ok) {
+			a.Equal(10, intVal)
+		}
+	}
+}
+
+func TestMapChan(t *testing.T) {
+	a := assert.New(t)
+	m := &Mapper{}
+	var p *chan struct{}
+	v := make(chan struct{})
+	a.NoError(m.Map(&p, &v))
+}
+
+func TestMapFunc(t *testing.T) {
+	a := assert.New(t)
+	m := &Mapper{}
+	var fn func() int
+	if a.NoError(m.Map(&fn, func() int { return 10 })) {
+		a.Equal(10, fn())
+	}
+}
+
 type struct1 struct {
 	StrPtr   *string `json:"strptr"`
 	Str      string
@@ -216,68 +282,38 @@ func TestMapMultiStructFields(t *testing.T) {
 	}
 }
 
-func TestMapKeyType(t *testing.T) {
-	a := assert.New(t)
-	m := &Mapper{}
-	s1 := map[string]interface{}{"key": 10}
-	s2 := map[interface{}]interface{}{"key": "hello"}
-	if a.NoError(m.Map(&s1, s2)) {
-		a.Equal("hello", s1["key"])
-	}
-	i1 := map[int]interface{}{1: 100}
-	if a.NoError(m.Map(&s2, i1)) {
-		a.Equal(100, s2[1])
-	}
-	a.Error(m.Map(&s1, i1))
+type wildcardStruct struct {
+	Str string `json:"*"`
+	Int int    `json:"*"`
 }
 
-func TestMapPtr(t *testing.T) {
-	a := assert.New(t)
-	m := &Mapper{}
-	var p *struct1
-	s := struct1{Str: "str"}
-	if a.NoError(m.Map(&p, &s)) {
-		a.NotNil(p)
-		a.Equal(&s, p)
-	}
+type wildcardPtrStruct struct {
+	Str *string `json:"*"`
+	Int **int   `json:"*"`
 }
 
-func TestMapInterface(t *testing.T) {
+func TestMapWildcardStructField(t *testing.T) {
 	a := assert.New(t)
 	m := &Mapper{}
-	s := struct1{Str: "str"}
-	var i interface{}
-	if a.NoError(m.Map(&i, &s)) {
-		s1, ok := i.(*struct1)
-		if a.True(ok) {
-			a.Equal("str", s1.Str)
+	s1 := &wildcardStruct{}
+	if a.NoError(m.Map(s1, "str")) {
+		a.Equal("str", s1.Str)
+	}
+	s2 := &wildcardStruct{}
+	if a.NoError(m.Map(s2, int64(10))) {
+		a.Equal(10, s2.Int)
+	}
+
+	s3 := &wildcardPtrStruct{}
+	if a.NoError(m.Map(s3, "str")) {
+		if a.NotNil(s3.Str) {
+			a.Equal("str", *s3.Str)
 		}
 	}
-	var p *struct1
-	if a.NoError(m.Map(&p, i)) {
-		a.Equal(&s, p)
-	}
-	if a.NoError(m.Map(&i, int(10))) {
-		intVal, ok := i.(int)
-		if a.True(ok) {
-			a.Equal(10, intVal)
+	s4 := &wildcardPtrStruct{}
+	if a.NoError(m.Map(s4, int64(10))) {
+		if a.NotNil(s4.Int) && a.NotNil(*s4.Int) {
+			a.Equal(10, **s4.Int)
 		}
-	}
-}
-
-func TestMapChan(t *testing.T) {
-	a := assert.New(t)
-	m := &Mapper{}
-	var p *chan struct{}
-	v := make(chan struct{})
-	a.NoError(m.Map(&p, &v))
-}
-
-func TestMapFunc(t *testing.T) {
-	a := assert.New(t)
-	m := &Mapper{}
-	var fn func() int
-	if a.NoError(m.Map(&fn, func() int { return 10 })) {
-		a.Equal(10, fn())
 	}
 }

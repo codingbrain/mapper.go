@@ -54,6 +54,7 @@ type FieldInfo struct {
 	Exported  bool
 	Squash    bool
 	OmitEmpty bool
+	Wildcard  bool
 	Ignore    bool
 	MapName   string
 }
@@ -345,6 +346,24 @@ func (m *Mapper) assignToStruct(d, s reflect.Value) (assigned bool, err error) {
 			d.Set(v)
 			assigned = true
 		}
+	default:
+		for i := 0; i < d.NumField(); i++ {
+			field := d.Type().Field(i)
+			info := m.ParseField(field)
+			if info.Wildcard {
+				t := field.Type
+				for t.Kind() == reflect.Ptr {
+					t = t.Elem()
+				}
+				convFn := TypeConverterFactory(s.Type(), t)
+				if convFn != nil {
+					convVal := convFn(s)
+					if convVal.IsValid() {
+						return m.assignValue(d.Field(i), convFn(s))
+					}
+				}
+			}
+		}
 	}
 	return
 }
@@ -443,6 +462,9 @@ func (m *Mapper) ParseField(f reflect.StructField) *FieldInfo {
 					info.Ignore = true
 				} else if vals[0] != "" {
 					info.MapName = vals[0]
+					if info.MapName == "*" {
+						info.Wildcard = true
+					}
 				}
 				for i := 1; i < len(vals); i++ {
 					switch vals[i] {
