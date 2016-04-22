@@ -333,14 +333,60 @@ func (m *Mapper) assignToStruct(d, s reflect.Value) (assigned bool, err error) {
 			assigned = true
 		}
 	case MapClass:
-		convFn := TypeConverterFactory(StringType, s.Type().Key())
+		convFn := TypeConverterFactory(s.Type().Key(), StringType)
 		if convFn != nil {
 			v := reflect.New(d.Type()).Elem()
 			errs := make(map[string]*structAssignErr)
-			m.assignMapToStruct(v, s, convFn, errs)
+			keys := make(map[string]*mapKeyAssign)
+			for _, key := range s.MapKeys() {
+				cvKey := convFn(key)
+				if cvKey.IsValid() {
+					keys[cvKey.String()] = &mapKeyAssign{key: key}
+				}
+			}
+			m.assignMapToStruct(v, s, keys, errs)
 			for _, e := range errs {
 				if len(e.errs) > 0 && e.succeeded == 0 {
 					return false, e.errs[0]
+				}
+			}
+			unassignedCnt := 0
+			for _, mka := range keys {
+				if !mka.assigned {
+					unassignedCnt++
+				}
+			}
+			if unassignedCnt > 0 {
+				// some unassigned keys left, looking for a wildcard map
+				for i := 0; i < v.NumField(); i++ {
+					field := v.Type().Field(i)
+					info := m.ParseField(field)
+					// looking for a wildcard map
+					if !info.Wildcard || field.Type.Kind() != reflect.Map {
+						continue
+					}
+					// map key/value convertible
+					keyConvFn := TypeConverterFactory(s.Type().Key(), field.Type.Key())
+					valConvFn := TypeConverterFactory(s.Type().Elem(), field.Type.Elem())
+					if keyConvFn == nil || valConvFn == nil {
+						continue
+					}
+					m := v.Field(i)
+					if m.IsNil() {
+						m.Set(reflect.MakeMap(field.Type))
+					}
+					for _, mka := range keys {
+						if mka.assigned {
+							continue
+						}
+						cvKey := keyConvFn(mka.key)
+						cvVal := valConvFn(s.MapIndex(mka.key))
+						if !cvKey.IsValid() || !cvVal.IsValid() {
+							continue
+						}
+						m.SetMapIndex(cvKey, cvVal)
+					}
+					break
 				}
 			}
 			d.Set(v)
@@ -371,6 +417,11 @@ func (m *Mapper) assignToStruct(d, s reflect.Value) (assigned bool, err error) {
 type structAssignErr struct {
 	succeeded int
 	errs      []error
+}
+
+type mapKeyAssign struct {
+	key      reflect.Value
+	assigned bool
 }
 
 func (m *Mapper) assignStructToMap(d, s reflect.Value, convFn TypeConverter, errs map[string]*structAssignErr) {
@@ -417,29 +468,32 @@ func (m *Mapper) assignStructToMap(d, s reflect.Value, convFn TypeConverter, err
 	}
 }
 
-func (m *Mapper) assignMapToStruct(d, s reflect.Value, convFn TypeConverter, errs map[string]*structAssignErr) {
+func (m *Mapper) assignMapToStruct(d, s reflect.Value, keys map[string]*mapKeyAssign, errs map[string]*structAssignErr) {
 	for i := 0; i < d.Type().NumField(); i++ {
 		field := d.Type().Field(i)
 		info := m.ParseField(field)
-		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			m.assignMapToStruct(d.Field(i), s, convFn, errs)
+		if (field.Anonymous || info.Squash) && field.Type.Kind() == reflect.Struct {
+			m.assignMapToStruct(d.Field(i), s, keys, errs)
 		} else if key := info.MapName; info.Exported && !info.Ignore && key != "" {
-			cvKey := convFn(reflect.ValueOf(key))
-			var err error
-			if !cvKey.IsValid() {
-				err = ErrorKeyTypeMismatch
-			} else if val := s.MapIndex(cvKey); val.IsValid() {
-				_, err = m.assignValue(d.Field(i), val)
-			}
-			assignErr := errs[key]
-			if assignErr == nil {
-				assignErr = &structAssignErr{}
-				errs[key] = assignErr
-			}
-			if err != nil {
-				assignErr.errs = append(assignErr.errs, err)
+			if mka, exist := keys[key]; !exist {
+				continue
+			} else if mapVal := s.MapIndex(mka.key); !mapVal.IsValid() {
+				continue
 			} else {
-				assignErr.succeeded++
+				assignErr := errs[key]
+				if assignErr == nil {
+					assignErr = &structAssignErr{}
+					errs[key] = assignErr
+				}
+				assigned, err := m.assignValue(d.Field(i), s.MapIndex(mka.key))
+				if err != nil {
+					assignErr.errs = append(assignErr.errs, err)
+				} else {
+					assignErr.succeeded++
+				}
+				if assigned {
+					mka.assigned = true
+				}
 			}
 		}
 	}

@@ -292,6 +292,12 @@ type wildcardPtrStruct struct {
 	Int **int   `json:"*"`
 }
 
+type wildcardMapStruct struct {
+	Str      string                 `json:"str"`
+	Squashed struct4                `json:",squash"`
+	Ext      map[string]interface{} `json:"*"`
+}
+
 func TestMapWildcardStructField(t *testing.T) {
 	a := assert.New(t)
 	m := &Mapper{}
@@ -314,6 +320,19 @@ func TestMapWildcardStructField(t *testing.T) {
 	if a.NoError(m.Map(s4, int64(10))) {
 		if a.NotNil(s4.Int) && a.NotNil(*s4.Int) {
 			a.Equal(10, **s4.Int)
+		}
+	}
+
+	s5 := &wildcardMapStruct{}
+	if a.NoError(m.Map(s5, map[string]interface{}{"str": "str", "ext": 10})) {
+		a.Equal("str", s5.Str)
+		a.Equal("str", s5.Squashed.Str1)
+		if a.NotNil(s5.Squashed.Str2) {
+			a.Equal("str", *s5.Squashed.Str2)
+		}
+		if a.NotNil(s5.Ext) {
+			a.Contains(s5.Ext, "ext")
+			a.EqualValues(10, s5.Ext["ext"])
 		}
 	}
 }
