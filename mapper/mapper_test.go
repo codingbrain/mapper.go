@@ -7,9 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func tracedMapper(t *testing.T) *Mapper {
+	return &Mapper{Tracer: func(d, s reflect.Value, loc string) {
+		t.Log(loc, d.Kind().String(), s.Kind().String())
+	}}
+}
+
 func TestMapScalar(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	var int1, int2 int
 	int2 = 10
 	if a.NoError(m.MapValue(reflect.ValueOf(&int1), reflect.ValueOf(int2))) {
@@ -41,7 +47,7 @@ func TestMapScalar(t *testing.T) {
 
 func TestMapConvert(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	var int1 int
 	if a.NoError(m.Map(&int1, int64(10))) {
 		a.Equal(10, int1)
@@ -71,7 +77,7 @@ func TestMapConvert(t *testing.T) {
 
 func TestMapKeyType(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	s1 := map[string]interface{}{"key": 10}
 	s2 := map[interface{}]interface{}{"key": "hello"}
 	if a.NoError(m.Map(&s1, s2)) {
@@ -86,7 +92,7 @@ func TestMapKeyType(t *testing.T) {
 
 func TestMapPtr(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	var p *struct1
 	s := struct1{Str: "str"}
 	if a.NoError(m.Map(&p, &s)) {
@@ -97,7 +103,7 @@ func TestMapPtr(t *testing.T) {
 
 func TestMapInterface(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	s := struct1{Str: "str"}
 	var i interface{}
 	if a.NoError(m.Map(&i, &s)) {
@@ -120,7 +126,7 @@ func TestMapInterface(t *testing.T) {
 
 func TestMapChan(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	var p *chan struct{}
 	v := make(chan struct{})
 	a.NoError(m.Map(&p, &v))
@@ -128,7 +134,7 @@ func TestMapChan(t *testing.T) {
 
 func TestMapFunc(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	var fn func() int
 	if a.NoError(m.Map(&fn, func() int { return 10 })) {
 		a.Equal(10, fn())
@@ -145,7 +151,7 @@ type struct1 struct {
 
 func TestMapStruct(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	s0 := &struct1{Str: "s1"}
 	s1 := s0
 	s2 := &struct1{Str: "s2"}
@@ -167,7 +173,7 @@ type struct2 struct {
 
 func TestAssignMap(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	src := map[string]interface{}{
 		"Ref1": map[string]interface{}{
 			"strptr":   "s1",
@@ -225,7 +231,7 @@ type struct3 struct {
 
 func TestMapAnonStructField(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	src := map[string]interface{}{
 		"Str": "s1",
 		"Val": 101,
@@ -249,12 +255,14 @@ type struct5 struct {
 
 func TestMapMultiStructFields(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	src := map[string]interface{}{"str": "s1"}
 	var s struct4
 	if a.NoError(m.Map(&s, src)) {
 		a.Equal("s1", s.Str1)
-		a.Equal("s1", *s.Str2)
+		if a.NotNil(s.Str2) {
+			a.Equal("s1", *s.Str2)
+		}
 		a.Equal(0, s.Int1)
 	}
 	a.Error(m.Map(&s, map[string]interface{}{"str": 1.6}))
@@ -300,7 +308,7 @@ type wildcardMapStruct struct {
 
 func TestMapWildcardStructField(t *testing.T) {
 	a := assert.New(t)
-	m := &Mapper{}
+	m := tracedMapper(t)
 	s1 := &wildcardStruct{}
 	if a.NoError(m.Map(s1, "str")) {
 		a.Equal("str", s1.Str)
@@ -335,4 +343,59 @@ func TestMapWildcardStructField(t *testing.T) {
 			a.EqualValues(10, s5.Ext["ext"])
 		}
 	}
+}
+
+type ToMapNested struct {
+	Dict map[string]interface{} `json:"dict"`
+}
+
+type toMapNested1 struct {
+	Str1 string  `json:"str1"`
+	Str2 *string `json:"str2,omitempty"`
+}
+
+type ToMap struct {
+	Str    string  `json:"str,omitempty"`
+	PtrStr *string `json:"pstr,omitempty"`
+	IntStr *int    `json:"str,omitempty"`
+
+	ToMapNested
+	Squashed toMapNested1 `json:",squash"`
+	SubStru  toMapNested1 `json:"sub"`
+}
+
+func TestStructToMap(t *testing.T) {
+	a := assert.New(t)
+	m := tracedMapper(t)
+
+	s1 := &ToMap{Str: "str"}
+	s1.Dict = map[string]interface{}{"a": 0.1}
+	s1.Squashed.Str1 = "str"
+	str2 := "str2"
+	s1.SubStru.Str2 = &str2
+
+	d := make(map[string]interface{})
+	if a.NoError(m.Map(d, s1)) {
+		if a.Contains(d, "str") {
+			a.Equal("str", d["str"])
+		}
+		a.NotContains(d, "pstr")
+		if a.Contains(d, "dict") {
+			a.Equal(map[string]interface{}{"a": 0.1}, d["dict"])
+		}
+		if a.Contains(d, "str1") {
+			a.Equal("str", d["str1"])
+		}
+		a.NotContains(d, "str2")
+		if a.Contains(d, "sub") {
+			sub, ok := d["sub"].(map[string]interface{})
+			if a.True(ok) && a.Contains(sub, "str2") {
+				ptrStr, ok := sub["str2"].(*string)
+				if a.True(ok) && a.NotNil(ptrStr) {
+					a.Equal("str2", *ptrStr)
+				}
+			}
+		}
+	}
+
 }
