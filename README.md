@@ -1,7 +1,6 @@
-# Dynamic data manipulation library for Go
+# Common library for Go
 
-Manipulating data dynamically using `map` in Go is difficult.
-The library provides a few utilities to handle common use cases.
+The library provides commonly used features for Go language.
 
 ### Features
 
@@ -13,7 +12,7 @@ The library provides a few utilities to handle common use cases.
 
 ...
 
-import "github.com/easeway/mapper.go/mapper"
+import "github.com/easeway/langx.go/mapper"
 
 ...
 
@@ -180,6 +179,35 @@ It will search for tags in the order of `n`, `map` until a tag is found.
 
 This is mostly for debugging purpose.
 Assign a function to `Mapper.Tracer` can track the traversal during conversion.
+
+#### Aggregated Errors
+
+Sometime multiple errors need aggregated and reported as a single error.
+The type `AggregatedError` implements this behavior.
+
+```go
+
+import "github.com/easeway/langx.go/errs"
+
+...
+// First define an AggregatedError
+
+errors := errs.AggregatedError{}
+...
+errors.Add(err)
+// Or
+errors.AddErr(err)
+// Or
+errors.AddMany(err1, err2, ...)
+// Or if the function only returns error
+errors.Add(os.Remove(...))
+// And finally return
+return errors.Aggregate()
+```
+
+When using `Add/AddErr/AddMany`, don't worry about `err` is `nil` or not,
+`nil` won't be added.
+And `Aggregate` only returns `nil` if no error is added.
 
 # License
 
