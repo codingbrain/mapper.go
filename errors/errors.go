@@ -1,4 +1,4 @@
-package errs
+package errors
 
 // AggregatedError is an error contains multiple errors
 type AggregatedError struct {

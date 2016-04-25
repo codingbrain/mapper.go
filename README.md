@@ -187,22 +187,21 @@ The type `AggregatedError` implements this behavior.
 
 ```go
 
-import "github.com/easeway/langx.go/errs"
+import "github.com/easeway/langx.go/errors"
 
 ...
 // First define an AggregatedError
-
-errors := errs.AggregatedError{}
+errs := errors.AggregatedError{}
 ...
-errors.Add(err)
+errs.Add(err)
 // Or
-errors.AddErr(err)
+errs.AddErr(err)
 // Or
-errors.AddMany(err1, err2, ...)
+errs.AddMany(err1, err2, ...)
 // Or if the function only returns error
-errors.Add(os.Remove(...))
+errs.Add(os.Remove(...))
 // And finally return
-return errors.Aggregate()
+return errs.Aggregate()
 ```
 
 When using `Add/AddErr/AddMany`, don't worry about `err` is `nil` or not,
