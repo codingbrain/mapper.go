@@ -212,6 +212,10 @@ func locPtr(loc string) string {
 	return loc + "*"
 }
 
+func locInterface(loc string) string {
+	return loc + "@"
+}
+
 func (m *Mapper) traceMap(d, s reflect.Value, loc string) {
 	if m.Tracer != nil {
 		m.Tracer(d, s, loc)
@@ -231,6 +235,9 @@ func (m *Mapper) assignValue(d, s reflect.Value, loc string) (assigned bool, err
 	if d.Kind() == reflect.Ptr {
 		return m.assignToPtr(d, s, loc)
 	}
+	if d.Kind() == reflect.Interface {
+		return m.assignToInterface(d, s, loc)
+	}
 
 	if s.Kind() == reflect.Interface {
 		s = UnwrapInterface(s)
@@ -247,20 +254,7 @@ func (m *Mapper) assignValue(d, s reflect.Value, loc string) (assigned bool, err
 	case StructClass:
 		assigned, err = m.assignToStruct(d, s, loc)
 	default:
-		switch TypeCompatibility(s.Type(), d.Type()) {
-		case Assignable:
-			if !d.CanSet() {
-				return false, errNoSetValue(loc)
-			}
-			d.Set(s)
-			assigned = true
-		case Convertible:
-			if !d.CanSet() {
-				return false, errNoSetValue(loc)
-			}
-			d.Set(s.Convert(d.Type()))
-			assigned = true
-		}
+		assigned, err = m.assignToOther(d, s, loc)
 	}
 	if assigned || err != nil {
 		return
@@ -274,12 +268,12 @@ func (m *Mapper) assignValue(d, s reflect.Value, loc string) (assigned bool, err
 }
 
 func (m *Mapper) assignToPtr(d, s reflect.Value, loc string) (bool, error) {
-	if !d.CanSet() {
-		return m.assignValue(d.Elem(), s, locPtr(loc))
-	}
-	if s.Type().ConvertibleTo(d.Type()) {
+	if d.CanSet() && s.Type().ConvertibleTo(d.Type()) {
 		d.Set(s.Convert(d.Type()))
 		return true, nil
+	}
+	if !d.IsNil() {
+		return m.assignValue(d.Elem(), s, locPtr(loc))
 	}
 	v := reflect.New(d.Type().Elem())
 	assigned, err := m.assignValue(v.Elem(), s, locPtr(loc))
@@ -287,6 +281,13 @@ func (m *Mapper) assignToPtr(d, s reflect.Value, loc string) (bool, error) {
 		d.Set(v)
 	}
 	return assigned, err
+}
+
+func (m *Mapper) assignToInterface(d, s reflect.Value, loc string) (assigned bool, err error) {
+	if d.IsValid() && !d.CanSet() {
+		return m.assignValue(d.Elem(), s, locInterface(loc))
+	}
+	return m.assignToOther(d, s, loc)
 }
 
 func (m *Mapper) assignToSlice(d, s reflect.Value, loc string) (assigned bool, err error) {
@@ -309,16 +310,12 @@ func (m *Mapper) assignToSlice(d, s reflect.Value, loc string) (assigned bool, e
 	return
 }
 
-func copyMap(d, v reflect.Value, loc string) error {
+func makeMap(d reflect.Value, loc string) error {
 	if d.IsNil() {
 		if !d.CanSet() {
 			return errNoSetValue(loc)
 		}
-		d.Set(v)
-	} else {
-		for _, key := range v.MapKeys() {
-			d.SetMapIndex(key, v.MapIndex(key))
-		}
+		d.Set(reflect.MakeMap(d.Type()))
 	}
 	return nil
 }
@@ -330,24 +327,29 @@ func (m *Mapper) assignToMap(d, s reflect.Value, loc string) (assigned bool, err
 		if convFn == nil {
 			return false, errKeyTypeMismatch(loc)
 		}
+
+		if err = makeMap(d, loc); err != nil {
+			return false, err
+		}
 		keys := s.MapKeys()
 		if len(keys) > 0 {
 			elemType := d.Type().Elem()
-			v := reflect.MakeMap(reflect.MapOf(d.Type().Key(), elemType))
 			for _, key := range keys {
-				val := reflect.New(elemType).Elem()
+				cvKey := convFn(key)
+				if !cvKey.IsValid() {
+					return false, errKeyTypeMismatch(locExp(loc, key.String()))
+				}
+				val := d.MapIndex(cvKey)
+				exist := elemType.Kind() != reflect.Interface && val.IsValid()
+				if !exist {
+					val = reflect.New(elemType).Elem()
+				}
 				if _, err = m.assignValue(val, s.MapIndex(key), locExp(loc, key.String())); err != nil {
 					return
 				}
-				cvKey := convFn(key)
-				if cvKey.IsValid() {
-					v.SetMapIndex(cvKey, val)
-				} else {
-					return false, errKeyTypeMismatch(locExp(loc, key.String()))
+				if !exist {
+					d.SetMapIndex(cvKey, val)
 				}
-			}
-			if err := copyMap(d, v, loc); err != nil {
-				return false, err
 			}
 			assigned = true
 		}
@@ -359,16 +361,15 @@ func (m *Mapper) assignToMap(d, s reflect.Value, loc string) (assigned bool, err
 		if convFn == nil {
 			return false, errKeyTypeMismatch(loc)
 		}
-		v := reflect.MakeMap(d.Type())
+		if err := makeMap(d, loc); err != nil {
+			return false, err
+		}
 		errs := make(map[string]*structAssignErr)
-		m.assignStructToMap(v, s, loc, convFn, errs)
+		m.assignStructToMap(d, s, loc, convFn, errs)
 		for _, e := range errs {
 			if len(e.errs) > 0 && e.succeeded == 0 {
 				return false, e.errs[0]
 			}
-		}
-		if err := copyMap(d, v, loc); err != nil {
-			return false, err
 		}
 		assigned = true
 	}
@@ -388,7 +389,6 @@ func (m *Mapper) assignToStruct(d, s reflect.Value, loc string) (assigned bool, 
 	case MapClass:
 		convFn := TypeConverterFactory(s.Type().Key(), StringType)
 		if convFn != nil {
-			v := reflect.New(d.Type()).Elem()
 			errs := make(map[string]*structAssignErr)
 			keys := make(map[string]*mapKeyAssign)
 			for _, key := range s.MapKeys() {
@@ -397,7 +397,7 @@ func (m *Mapper) assignToStruct(d, s reflect.Value, loc string) (assigned bool, 
 					keys[cvKey.String()] = &mapKeyAssign{key: key}
 				}
 			}
-			m.assignMapToStruct(v, s, loc, keys, errs)
+			m.assignMapToStruct(d, s, loc, keys, errs)
 			for _, e := range errs {
 				if len(e.errs) > 0 && e.succeeded == 0 {
 					return false, e.errs[0]
@@ -411,8 +411,8 @@ func (m *Mapper) assignToStruct(d, s reflect.Value, loc string) (assigned bool, 
 			}
 			if unassignedCnt > 0 {
 				// some unassigned keys left, looking for a wildcard map
-				for i := 0; i < v.NumField(); i++ {
-					field := v.Type().Field(i)
+				for i := 0; i < d.NumField(); i++ {
+					field := d.Type().Field(i)
 					info := m.ParseField(field)
 					// looking for a wildcard map
 					if !info.Wildcard || field.Type.Kind() != reflect.Map {
@@ -424,7 +424,7 @@ func (m *Mapper) assignToStruct(d, s reflect.Value, loc string) (assigned bool, 
 					if keyConvFn == nil || valConvFn == nil {
 						continue
 					}
-					m := v.Field(i)
+					m := d.Field(i)
 					if m.IsNil() {
 						m.Set(reflect.MakeMap(field.Type))
 					}
@@ -442,7 +442,6 @@ func (m *Mapper) assignToStruct(d, s reflect.Value, loc string) (assigned bool, 
 					break
 				}
 			}
-			d.Set(v)
 			assigned = true
 		}
 	default:
@@ -463,6 +462,24 @@ func (m *Mapper) assignToStruct(d, s reflect.Value, loc string) (assigned bool, 
 				}
 			}
 		}
+	}
+	return
+}
+
+func (m *Mapper) assignToOther(d, s reflect.Value, loc string) (assigned bool, err error) {
+	switch TypeCompatibility(s.Type(), d.Type()) {
+	case Assignable:
+		if !d.CanSet() {
+			return false, errNoSetValue(loc)
+		}
+		d.Set(s)
+		assigned = true
+	case Convertible:
+		if !d.CanSet() {
+			return false, errNoSetValue(loc)
+		}
+		d.Set(s.Convert(d.Type()))
+		assigned = true
 	}
 	return
 }
@@ -598,4 +615,10 @@ func (m *Mapper) MapValue(v, s reflect.Value) error {
 // Map assign values between interface{} types
 func (m *Mapper) Map(v, s interface{}) error {
 	return m.MapValue(reflect.ValueOf(v), reflect.ValueOf(s))
+}
+
+// Map wraps Mapper.Map with a default Mapper instance
+func Map(v, s interface{}) error {
+	m := &Mapper{}
+	return m.Map(v, s)
 }

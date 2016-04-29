@@ -13,6 +13,36 @@ func tracedMapper(t *testing.T) *Mapper {
 	}}
 }
 
+type struct1 struct {
+	StrPtr   *string `json:"strptr"`
+	Str      string
+	FloatPtr *float64
+	Skip     string `json:"-"`
+	internal int
+}
+
+type struct2 struct {
+	Ref1 struct1
+	Ptr1 *struct1
+	Map  map[string]*struct1
+	Arr1 []*struct1
+}
+
+type struct3 struct {
+	struct1
+	Val int
+}
+
+type struct4 struct {
+	Str1 string  `json:"str"`
+	Str2 *string `json:"str"`
+	Int1 int     `json:"str"`
+}
+
+type struct5 struct {
+	S4 map[string]*struct4
+}
+
 func TestMapScalar(t *testing.T) {
 	a := assert.New(t)
 	m := tracedMapper(t)
@@ -99,6 +129,31 @@ func TestMapPtr(t *testing.T) {
 		a.NotNil(p)
 		a.Equal(&s, p)
 	}
+	s.StrPtr = &s.Str
+	if a.NoError(m.Map(&s, map[string]interface{}{"strptr": "str1"})) {
+		a.Equal("str1", s.Str)
+		a.Equal(&s.Str, s.StrPtr)
+	}
+
+	dict := map[string]interface{}{"strptr": &s.Str, "other": "other"}
+	if a.NoError(m.Map(dict, map[string]interface{}{"strptr": "str2"})) {
+		_, ok := dict["strptr"].(*string)
+		a.False(ok)
+		strVal, ok := dict["strptr"].(string)
+		a.True(ok)
+		a.Equal("str2", strVal)
+		a.Equal("str1", s.Str)
+		a.EqualValues("other", dict["other"])
+	}
+
+	pstr1 := &s.Str
+	str2 := "str2"
+	pstr2 := &str2
+	if a.NoError(m.Map(&pstr1, pstr2)) {
+		a.Equal(&str2, pstr1)
+		a.Equal(&str2, pstr2)
+		a.Equal("str1", s.Str)
+	}
 }
 
 func TestMapInterface(t *testing.T) {
@@ -141,14 +196,6 @@ func TestMapFunc(t *testing.T) {
 	}
 }
 
-type struct1 struct {
-	StrPtr   *string `json:"strptr"`
-	Str      string
-	FloatPtr *float64
-	Skip     string `json:"-"`
-	internal int
-}
-
 func TestMapStruct(t *testing.T) {
 	a := assert.New(t)
 	m := tracedMapper(t)
@@ -162,13 +209,6 @@ func TestMapStruct(t *testing.T) {
 		a.Equal("s0", s0.Str)
 		a.Equal("new", s2.Str)
 	}
-}
-
-type struct2 struct {
-	Ref1 struct1
-	Ptr1 *struct1
-	Map  map[string]*struct1
-	Arr1 []*struct1
 }
 
 func TestAssignMap(t *testing.T) {
@@ -224,11 +264,6 @@ func TestAssignMap(t *testing.T) {
 	}
 }
 
-type struct3 struct {
-	struct1
-	Val int
-}
-
 func TestMapAnonStructField(t *testing.T) {
 	a := assert.New(t)
 	m := tracedMapper(t)
@@ -241,16 +276,6 @@ func TestMapAnonStructField(t *testing.T) {
 		a.Equal("s1", s.Str)
 		a.Equal(101, s.Val)
 	}
-}
-
-type struct4 struct {
-	Str1 string  `json:"str"`
-	Str2 *string `json:"str"`
-	Int1 int     `json:"str"`
-}
-
-type struct5 struct {
-	S4 map[string]*struct4
 }
 
 func TestMapMultiStructFields(t *testing.T) {
@@ -397,5 +422,4 @@ func TestStructToMap(t *testing.T) {
 			}
 		}
 	}
-
 }
