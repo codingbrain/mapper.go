@@ -43,7 +43,11 @@ func (e *AggregatedError) Aggregate() error {
 
 // Error implements error
 func (e *AggregatedError) Error() string {
-	if len(e.Errors) > 0 {
+	l := len(e.Errors)
+	if l == 1 {
+		return e.Errors[0].Error()
+	}
+	if l > 0 {
 		msg := "Multiple Errors:"
 		for _, err := range e.Errors {
 			msg += "\n" + err.Error()
