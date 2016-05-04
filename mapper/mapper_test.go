@@ -211,6 +211,39 @@ func TestMapStruct(t *testing.T) {
 	}
 }
 
+func TestMergeMap(t *testing.T) {
+	a := assert.New(t)
+	m := tracedMapper(t)
+	m0 := map[string]interface{}{
+		"key0": "val0",
+		"key1": "val1",
+		"dict0": map[string]interface{}{
+			"key0": "val0",
+			"key1": "val1",
+		},
+	}
+	m1 := map[string]interface{}{
+		"key1": "val1.1",
+		"key2": "val2",
+		"dict0": map[string]interface{}{
+			"key1": "val1.1",
+			"key2": "val2",
+		},
+		"dict1": map[string]interface{}{},
+	}
+
+	if a.NoError(m.Map(m0, m1)) {
+		a.EqualValues("val0", m0["key0"])
+		a.EqualValues("val1.1", m0["key1"])
+		a.EqualValues("val2", m0["key2"])
+		d := m0["dict0"].(map[string]interface{})
+		a.EqualValues("val0", d["key0"])
+		a.EqualValues("val1.1", d["key1"])
+		a.EqualValues("val2", d["key2"])
+		a.Contains(m0, "dict1")
+	}
+}
+
 func TestAssignMap(t *testing.T) {
 	a := assert.New(t)
 	m := tracedMapper(t)

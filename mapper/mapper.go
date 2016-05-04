@@ -167,6 +167,19 @@ func UnwrapPtr(v reflect.Value) reflect.Value {
 	return v
 }
 
+// UnwrapAny returns the actual value from interface/ptr
+func UnwrapAny(v reflect.Value) reflect.Value {
+	for {
+		if v.Kind() == reflect.Interface {
+			v = UnwrapInterface(v)
+		} else if v.Kind() == reflect.Ptr {
+			v = UnwrapPtr(v)
+		} else {
+			return v
+		}
+	}
+}
+
 // IsEmpty determine if the value is an empty value
 func IsEmpty(v reflect.Value) bool {
 	for {
@@ -193,6 +206,15 @@ func IsEmpty(v reflect.Value) bool {
 			return false
 		}
 	}
+}
+
+// IsContainer determine if the value is map or struct
+func IsContainer(v reflect.Value) bool {
+	switch TypeClass(v.Kind()) {
+	case MapClass, StructClass:
+		return true
+	}
+	return false
 }
 
 // MapTracer receives the traversal in mapping
@@ -283,9 +305,25 @@ func (m *Mapper) assignToPtr(d, s reflect.Value, loc string) (bool, error) {
 	return assigned, err
 }
 
+func (m *Mapper) tryMergeContainers(d, s reflect.Value, loc string) (assigned bool, err error) {
+	unwD := UnwrapAny(d)
+	unwS := UnwrapAny(s)
+	if IsContainer(unwD) && IsContainer(unwS) {
+		return m.assignValue(unwD, unwS, locExp(loc, "+"))
+	}
+	return
+}
+
 func (m *Mapper) assignToInterface(d, s reflect.Value, loc string) (assigned bool, err error) {
-	if d.IsValid() && !d.CanSet() {
-		return m.assignValue(d.Elem(), s, locInterface(loc))
+	if d.IsValid() {
+		assigned, err = m.tryMergeContainers(d, s, loc)
+		if err != nil || assigned {
+			return
+		}
+
+		if !d.CanSet() {
+			return m.assignValue(d.Elem(), s, locInterface(loc))
+		}
 	}
 	return m.assignToOther(d, s, loc)
 }
@@ -340,14 +378,17 @@ func (m *Mapper) assignToMap(d, s reflect.Value, loc string) (assigned bool, err
 					return false, errKeyTypeMismatch(locExp(loc, key.String()))
 				}
 				val := d.MapIndex(cvKey)
-				exist := elemType.Kind() != reflect.Interface && val.IsValid()
-				if !exist {
+				sval := s.MapIndex(key)
+				valLoc := locExp(loc, key.String())
+				valAssigned, e := m.tryMergeContainers(val, sval, valLoc)
+				if e != nil {
+					return false, e
+				}
+				if !valAssigned {
 					val = reflect.New(elemType).Elem()
-				}
-				if _, err = m.assignValue(val, s.MapIndex(key), locExp(loc, key.String())); err != nil {
-					return
-				}
-				if !exist {
+					if _, err = m.assignValue(val, sval, valLoc); err != nil {
+						return
+					}
 					d.SetMapIndex(cvKey, val)
 				}
 			}
