@@ -334,11 +334,15 @@ func (m *Mapper) assignToSlice(d, s reflect.Value, loc string) (assigned bool, e
 			return false, errNoSetValue(loc)
 		}
 		v := reflect.MakeSlice(d.Type(), s.Len(), s.Len())
-		for i := 0; i < s.Len(); i++ {
-			if a, err := m.assignValue(v.Index(i), s.Index(i), locExp(loc, strconv.Itoa(i))); err != nil {
-				return false, err
-			} else if a {
-				assigned = true
+		if s.Len() == 0 {
+			assigned = true
+		} else {
+			for i := 0; i < s.Len(); i++ {
+				if a, err := m.assignValue(v.Index(i), s.Index(i), locExp(loc, strconv.Itoa(i))); err != nil {
+					return false, err
+				} else if a {
+					assigned = true
+				}
 			}
 		}
 		if assigned {
@@ -392,8 +396,8 @@ func (m *Mapper) assignToMap(d, s reflect.Value, loc string) (assigned bool, err
 					d.SetMapIndex(cvKey, val)
 				}
 			}
-			assigned = true
 		}
+		assigned = true
 	case StructClass:
 		if d.Type().Elem().Kind() != reflect.Interface {
 			return

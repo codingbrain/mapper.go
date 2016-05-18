@@ -75,6 +75,24 @@ func TestMapScalar(t *testing.T) {
 	}
 }
 
+func TestMapSlice(t *testing.T) {
+	a := assert.New(t)
+	m := tracedMapper(t)
+	var s1 []string
+	s2 := []string{"a"}
+	if a.NoError(m.Map(&s1, s2)) {
+		a.Len(s1, 1)
+		a.Equal("a", s1[0])
+		s1[0] = "b"
+		a.Equal("a", s2[0])
+	}
+
+	s2 = []string{}
+	if a.NoError(m.Map(&s1, s2)) {
+		a.Empty(s1)
+	}
+}
+
 func TestMapConvert(t *testing.T) {
 	a := assert.New(t)
 	m := tracedMapper(t)
@@ -295,6 +313,12 @@ func TestAssignMap(t *testing.T) {
 			a.Equal("s2", d.Arr1[0].Str)
 		}
 	}
+
+	src = map[string]interface{}{
+		"Map": map[string]interface{}{},
+	}
+	var d2 struct2
+	a.NoError(m.Map(&d2, src))
 }
 
 func TestMapAnonStructField(t *testing.T) {
