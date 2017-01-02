@@ -26,6 +26,13 @@
 			"repository": "https://github.com/stretchr/testify",
 			"revision": "c5d7a69bf8a2c9c374798160849c071093e41dd1",
 			"branch": "master"
-		}
+		},
+		{
+            "importpath": "gopkg.in/yaml.v2",
+            "repository": "https://gopkg.in/yaml.v2",
+            "revision": "a5b47d31c556af34a302ce5d659e6fea44d90de0",
+            "branch": "v2",
+            "notests": true
+        }
 	]
 }
