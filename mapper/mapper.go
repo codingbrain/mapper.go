@@ -622,7 +622,7 @@ func (m *Mapper) ParseField(f reflect.StructField) *FieldInfo {
 		info.MapName = f.Name
 		tags := m.FieldTags
 		if len(tags) == 0 {
-			tags = []string{"json"}
+			tags = []string{"map"}
 		}
 		for _, tag := range tags {
 			if val := f.Tag.Get(tag); val != "" {

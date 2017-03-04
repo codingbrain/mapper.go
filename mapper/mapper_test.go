@@ -14,10 +14,10 @@ func tracedMapper(t *testing.T) *Mapper {
 }
 
 type struct1 struct {
-	StrPtr   *string `json:"strptr"`
+	StrPtr   *string `map:"strptr"`
 	Str      string
 	FloatPtr *float64
-	Skip     string `json:"-"`
+	Skip     string `map:"-"`
 	internal int
 }
 
@@ -34,9 +34,9 @@ type struct3 struct {
 }
 
 type struct4 struct {
-	Str1 string  `json:"str"`
-	Str2 *string `json:"str"`
-	Int1 int     `json:"str"`
+	Str1 string  `map:"str"`
+	Str2 *string `map:"str"`
+	Int1 int     `map:"str"`
 }
 
 type struct5 struct {
@@ -373,19 +373,19 @@ func TestMapMultiStructFields(t *testing.T) {
 }
 
 type wildcardStruct struct {
-	Str string `json:"*"`
-	Int int    `json:"*"`
+	Str string `map:"*"`
+	Int int    `map:"*"`
 }
 
 type wildcardPtrStruct struct {
-	Str *string `json:"*"`
-	Int **int   `json:"*"`
+	Str *string `map:"*"`
+	Int **int   `map:"*"`
 }
 
 type wildcardMapStruct struct {
-	Str      string                 `json:"str"`
-	Squashed struct4                `json:",squash"`
-	Ext      map[string]interface{} `json:"*"`
+	Str      string                 `map:"str"`
+	Squashed struct4                `map:",squash"`
+	Ext      map[string]interface{} `map:"*"`
 }
 
 func TestMapWildcardStructField(t *testing.T) {
@@ -428,22 +428,22 @@ func TestMapWildcardStructField(t *testing.T) {
 }
 
 type ToMapNested struct {
-	Dict map[string]interface{} `json:"dict"`
+	Dict map[string]interface{} `map:"dict"`
 }
 
 type toMapNested1 struct {
-	Str1 string  `json:"str1"`
-	Str2 *string `json:"str2,omitempty"`
+	Str1 string  `map:"str1"`
+	Str2 *string `map:"str2,omitempty"`
 }
 
 type ToMap struct {
-	Str    string  `json:"str,omitempty"`
-	PtrStr *string `json:"pstr,omitempty"`
-	IntStr *int    `json:"str,omitempty"`
+	Str    string  `map:"str,omitempty"`
+	PtrStr *string `map:"pstr,omitempty"`
+	IntStr *int    `map:"str,omitempty"`
 
 	ToMapNested
-	Squashed toMapNested1 `json:",squash"`
-	SubStru  toMapNested1 `json:"sub"`
+	Squashed toMapNested1 `map:",squash"`
+	SubStru  toMapNested1 `map:"sub"`
 }
 
 func TestStructToMap(t *testing.T) {
